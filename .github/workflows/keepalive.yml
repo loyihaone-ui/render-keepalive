@@ -1,0 +1,64 @@
+name: Render keep-alive
+
+# Render free tier 15 daqiqa harakatsizlikdan keyin uxlaydi.
+# Bu workflow har 12 daqiqada /health ga so'rov yuborib serverni uyg'oq tutadi.
+#
+# Nega alohida (public) repo:
+#   GitHub Actions private repo uchun oyiga 2000 daqiqa beradi,
+#   har bir run kamida 1 daqiqa hisoblanadi. 24/7 `*/12` -> ~3600 daqiqa/oy.
+#   Public repo'da Actions daqiqalari cheksiz, shuning uchun asosiy kod
+#   private qoladi, bu repo esa faqat ping yuboradi.
+#
+# Cron UTC bo'yicha: */12 -> har 12 daqiqada, kechayu kunduz.
+
+on:
+  schedule:
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Ping /health
+        run: |
+          url="https://leadersacademy.onrender.com/health"
+          for attempt in 1 2 3 4 5; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 70 "$url" || true)
+            echo "urinish $attempt: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Server uyg'oq."
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Server javob bermadi: $url"
+          exit 1
+
+  # GitHub 60 kun harakatsizlikdan keyin `schedule` workflow'ni o'chirib qo'yadi.
+  # Har oyda alive.txt ga bitta commit qilib, jadval faol qolishini ta'minlaymiz.
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Touch alive.txt (oyiga bir marta)
+        run: |
+          date -u +"%Y-%m-%d" > alive.txt
+          if git diff --quiet -- alive.txt; then
+            echo "O'zgarish yo'q."
+            exit 0
+          fi
+          git config user.name "keepalive-bot"
+          git config user.email "keepalive-bot@users.noreply.github.com"
+          git add alive.txt
+          git commit -m "chore: heartbeat $(date -u +%Y-%m-%d)"
+          git push
