@@ -1,19 +1,26 @@
 name: Render keep-alive
 
 # Render free tier 15 daqiqa harakatsizlikdan keyin uxlaydi.
-# Bu workflow har 12 daqiqada /health ga so'rov yuborib serverni uyg'oq tutadi.
+# Bu workflow /health ga so'rov yuborib serverni uyg'oq tutadi.
 #
-# Nega alohida (public) repo:
-#   GitHub Actions private repo uchun oyiga 2000 daqiqa beradi,
-#   har bir run kamida 1 daqiqa hisoblanadi. 24/7 `*/12` -> ~3600 daqiqa/oy.
-#   Public repo'da Actions daqiqalari cheksiz, shuning uchun asosiy kod
-#   private qoladi, bu repo esa faqat ping yuboradi.
+# Nega har 5 daqiqada:
+#   GitHub cron "best-effort" — ba'zi runlar kechikadi yoki tushib qoladi.
+#   12 daqiqada bitta run tushib qolsa 24 daqiqa bo'shliq -> server uxlaydi.
+#   5 daqiqada esa ikkita ketma-ket run tushsa ham 15 daqiqaga yetmaydi.
 #
-# Cron UTC bo'yicha: */12 -> har 12 daqiqada, kechayu kunduz.
+# Nega "2-59/5" (2,7,12,...57) va "*/5" emas:
+#   Soat boshidagi yumaloq daqiqalar (0,5,10...) eng gavjum — GitHub aynan
+#   shu paytda runlarni kechiktiradi yoki tashlab yuboradi.
+#
+# Nega alohida public repo:
+#   Private repo uchun oyiga 2000 Actions daqiqasi beriladi, 24/7 `*/5` esa
+#   ~8600 daqiqa. Public repo'da daqiqalar cheksiz — asosiy kod private qoladi.
+#
+# Cron UTC bo'yicha ishlaydi.
 
 on:
   schedule:
-    - cron: "*/12 * * * *"
+    - cron: "2-59/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -43,18 +50,18 @@ jobs:
           echo "Server javob bermadi: $url"
           exit 1
 
-  # GitHub 60 kun harakatsizlikdan keyin `schedule` workflow'ni o'chirib qo'yadi.
-  # Har oyda alive.txt ga bitta commit qilib, jadval faol qolishini ta'minlaymiz.
+  # GitHub public repo'da 60 kun harakatsizlikdan keyin `schedule`ni o'chirib qo'yadi.
+  # Har kuni alive.txt ga bitta commit qilib jadval faol qoladi.
   heartbeat:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Touch alive.txt (oyiga bir marta)
+      - name: Touch alive.txt (kuniga bir marta)
         run: |
           date -u +"%Y-%m-%d" > alive.txt
           if git diff --quiet -- alive.txt; then
-            echo "O'zgarish yo'q."
+            echo "Bugun allaqachon yangilangan."
             exit 0
           fi
           git config user.name "keepalive-bot"
